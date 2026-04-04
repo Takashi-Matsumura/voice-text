@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Voice Text - 音声文字起こしアプリ
 
-## Getting Started
+ブラウザの Web Speech API を使ったリアルタイム音声文字起こしアプリです。
+スペースキーを押している間だけ録音し、離すと文字起こし結果が表示されます。
 
-First, run the development server:
+## 機能
+
+- **Push-to-talk 方式** - スペースキー長押しで録音、離すと停止
+- **日本語 / 英語 切り替え** - ヘッダーから言語モードを切り替え可能
+- **リアルタイム表示** - 認識中のテキストをリアルタイムで表示
+- **新しい順に表示** - 最新の文字起こし結果が常に画面上部に表示
+
+## 技術スタック
+
+- [Next.js](https://nextjs.org) 16
+- [React](https://react.dev) 19
+- [Tailwind CSS](https://tailwindcss.com) 4
+- [Web Speech API](https://developer.mozilla.org/ja/docs/Web/API/Web_Speech_API)
+
+## セットアップ
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 をブラウザで開いてください。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> **注意:** Web Speech API は Chrome / Edge で動作します。Safari や Firefox では対応していない場合があります。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 使い方
 
-## Learn More
+1. ブラウザで http://localhost:3000 を開く
+2. ヘッダーの言語ボタンで「JP 日本語」または「EN English」を選択
+3. スペースキーを押し続けながら話す
+4. スペースキーを離すと文字起こし結果が表示される
 
-To learn more about Next.js, take a look at the following resources:
+## 今後の予定
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- ローカル LLM との連携によるチャット会話の文字起こし
+- Whisper 等を使ったローカル音声認識への切り替え
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## ライセンス
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
