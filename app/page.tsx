@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useBuddy } from "./hooks/useBuddy";
 import Buddy from "./components/Buddy";
+import DebugPanel from "./components/DebugPanel";
 
 type Lang = "ja-JP" | "en-US";
 
@@ -25,11 +26,12 @@ export default function Home() {
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>("ja-JP");
+  const [debugMode, setDebugMode] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const isRecordingRef = useRef(false);
   const idRef = useRef(0);
   const mainRef = useRef<HTMLDivElement>(null);
-  const buddy = useBuddy(transcripts, lang);
+  const buddy = useBuddy(transcripts, lang, { debugMode });
 
   // Add buddy messages to the transcript timeline
   useEffect(() => {
@@ -197,6 +199,17 @@ export default function Home() {
                 )
               )}
             </div>
+            <button
+              onClick={() => setDebugMode((v) => !v)}
+              className={`rounded-md border px-2.5 py-1.5 text-xs font-mono font-medium transition-colors ${
+                debugMode
+                  ? "bg-amber-400 border-amber-500 text-zinc-900"
+                  : "bg-transparent border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              }`}
+              title={isJa ? "デバッグ表示を切り替え" : "Toggle debug panel"}
+            >
+              DEBUG
+            </button>
             <Buddy
               buddyMessage={buddy.buddyMessage}
               isThinking={buddy.isThinking}
@@ -321,6 +334,14 @@ export default function Home() {
           ))}
         </div>
       </main>
+
+      {debugMode && (
+        <DebugPanel
+          lastDebug={buddy.lastDebug}
+          callCount={buddy.callCount}
+          onClose={() => setDebugMode(false)}
+        />
+      )}
     </div>
   );
 }

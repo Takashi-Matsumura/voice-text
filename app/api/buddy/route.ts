@@ -1,3 +1,8 @@
+const UPSTREAM_BASE = "http://localhost:8080";
+const CHAT_URL = `${UPSTREAM_BASE}/v1/chat/completions`;
+const MODELS_URL = `${UPSTREAM_BASE}/v1/models`;
+const MODEL = "gemma4";
+
 const SYSTEM_PROMPTS: Record<string, string> = {
   "ja-JP": `あなたは「ツッコミ仲間」のぶたキャラです。子供が音声入力で話した言葉を見守っています。
 短い一言でツッコミやリアクションをしてください。
@@ -19,7 +24,40 @@ Rules:
 - Keep it simple — your audience is a kid`,
 };
 
+// GET: health / status check against the llama.cpp server
+export async function GET() {
+  const start = Date.now();
+  try {
+    const res = await fetch(MODELS_URL, {
+      signal: AbortSignal.timeout(2000),
+    });
+    const data = await res.json().catch(() => null);
+    const models = Array.isArray(data?.data)
+      ? data.data.map((m: { id?: string }) => m?.id).filter(Boolean)
+      : [];
+    return Response.json({
+      reachable: res.ok,
+      httpStatus: res.status,
+      latencyMs: Date.now() - start,
+      upstreamUrl: MODELS_URL,
+      configuredModel: MODEL,
+      models,
+    });
+  } catch (e) {
+    return Response.json({
+      reachable: false,
+      latencyMs: Date.now() - start,
+      upstreamUrl: MODELS_URL,
+      configuredModel: MODEL,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
 export async function POST(req: Request) {
+  const start = Date.now();
+  let requestMessages: { role: string; content: string }[] = [];
+
   try {
     const { buddyHistory, newTranscripts, lang } = (await req.json()) as {
       buddyHistory: string[];
@@ -30,36 +68,59 @@ export async function POST(req: Request) {
     const systemPrompt = SYSTEM_PROMPTS[lang] ?? SYSTEM_PROMPTS["ja-JP"];
 
     // Build conversation: past buddy messages as assistant, new transcripts as user
-    const messages: { role: string; content: string }[] = [
-      { role: "system", content: systemPrompt },
-    ];
+    requestMessages = [{ role: "system", content: systemPrompt }];
 
     for (const msg of buddyHistory) {
-      messages.push({ role: "assistant", content: msg });
+      requestMessages.push({ role: "assistant", content: msg });
     }
 
-    messages.push({
+    requestMessages.push({
       role: "user",
       content: newTranscripts.join("\n"),
     });
 
-    const response = await fetch("http://localhost:8080/v1/chat/completions", {
+    const requestBody = {
+      model: MODEL,
+      messages: requestMessages,
+      max_tokens: 80,
+      temperature: 0.9,
+    };
+
+    const response = await fetch(CHAT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gemma4",
-        messages,
-        max_tokens: 80,
-        temperature: 0.9,
-      }),
+      body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(5000),
     });
 
     const data = await response.json();
     const message = data.choices?.[0]?.message?.content?.trim() ?? "";
 
-    return Response.json({ message });
-  } catch {
-    return Response.json({ message: "" });
+    return Response.json({
+      message,
+      debug: {
+        upstreamUrl: CHAT_URL,
+        model: MODEL,
+        httpStatus: response.status,
+        latencyMs: Date.now() - start,
+        requestMessages,
+        requestParams: {
+          max_tokens: requestBody.max_tokens,
+          temperature: requestBody.temperature,
+        },
+        rawResponse: data,
+      },
+    });
+  } catch (e) {
+    return Response.json({
+      message: "",
+      debug: {
+        upstreamUrl: CHAT_URL,
+        model: MODEL,
+        latencyMs: Date.now() - start,
+        requestMessages,
+        error: e instanceof Error ? e.message : String(e),
+      },
+    });
   }
 }

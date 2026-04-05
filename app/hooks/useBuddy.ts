@@ -12,14 +12,36 @@ type TranscriptEntry = {
   isBuddy?: boolean;
 };
 
+export type BuddyDebugInfo = {
+  timestamp: string;
+  upstreamUrl: string;
+  model: string;
+  httpStatus?: number;
+  latencyMs: number;
+  requestMessages?: { role: string; content: string }[];
+  requestParams?: { max_tokens: number; temperature: number };
+  rawResponse?: unknown;
+  error?: string;
+  extractedMessage: string;
+  shown: boolean;
+};
+
 // Minimum time between LLM calls to avoid spamming during rapid input
 const COOLDOWN_MS = 8_000;
 // Probability of showing the generated comment (40%)
 const SHOW_PROBABILITY = 0.4;
 
-export function useBuddy(transcripts: TranscriptEntry[], lang: Lang) {
+export function useBuddy(
+  transcripts: TranscriptEntry[],
+  lang: Lang,
+  options: { debugMode?: boolean } = {}
+) {
+  const { debugMode = false } = options;
+  const showProbability = debugMode ? 1.0 : SHOW_PROBABILITY;
   const [buddyMessage, setBuddyMessage] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
+  const [lastDebug, setLastDebug] = useState<BuddyDebugInfo | null>(null);
+  const [callCount, setCallCount] = useState(0);
 
   const lastSeenCountRef = useRef(0);
   const lastFetchTimeRef = useRef(0);
@@ -43,20 +65,43 @@ export function useBuddy(transcripts: TranscriptEntry[], lang: Lang) {
           }),
         });
         const data = await res.json();
-        if (data.message) {
-          if (Math.random() < SHOW_PROBABILITY) {
-            setBuddyMessage(data.message);
-          }
+        const extracted: string = data.message ?? "";
+        const shown = Boolean(extracted) && Math.random() < showProbability;
+        if (shown) {
+          setBuddyMessage(extracted);
         }
-      } catch {
-        // buddy stays silent
+        setLastDebug({
+          timestamp: new Date().toISOString(),
+          upstreamUrl: data.debug?.upstreamUrl ?? "?",
+          model: data.debug?.model ?? "?",
+          httpStatus: data.debug?.httpStatus,
+          latencyMs: data.debug?.latencyMs ?? 0,
+          requestMessages: data.debug?.requestMessages,
+          requestParams: data.debug?.requestParams,
+          rawResponse: data.debug?.rawResponse,
+          error: data.debug?.error,
+          extractedMessage: extracted,
+          shown,
+        });
+        setCallCount((c) => c + 1);
+      } catch (e) {
+        setLastDebug({
+          timestamp: new Date().toISOString(),
+          upstreamUrl: "/api/buddy",
+          model: "?",
+          latencyMs: 0,
+          extractedMessage: "",
+          shown: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        setCallCount((c) => c + 1);
       } finally {
         isFetchingRef.current = false;
         setIsThinking(false);
         lastFetchTimeRef.current = Date.now();
       }
     },
-    [lang]
+    [lang, showProbability]
   );
 
   // Trigger on every new user transcript
@@ -105,5 +150,5 @@ export function useBuddy(transcripts: TranscriptEntry[], lang: Lang) {
     lastBuddyIndexRef.current = -1;
   }, []);
 
-  return { buddyMessage, isThinking, dismissMessage, reset };
+  return { buddyMessage, isThinking, dismissMessage, reset, lastDebug, callCount };
 }
