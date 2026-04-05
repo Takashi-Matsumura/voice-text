@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useBuddy } from "./hooks/useBuddy";
+import Buddy from "./components/Buddy";
 
 type Lang = "ja-JP" | "en-US";
 
@@ -9,6 +11,7 @@ type TranscriptEntry = {
   text: string;
   timestamp: Date;
   lang: Lang;
+  isBuddy?: boolean;
 };
 
 const LANG_CONFIG: Record<Lang, { label: string; flag: string }> = {
@@ -26,6 +29,25 @@ export default function Home() {
   const isRecordingRef = useRef(false);
   const idRef = useRef(0);
   const mainRef = useRef<HTMLDivElement>(null);
+  const buddy = useBuddy(transcripts, lang);
+
+  // Add buddy messages to the transcript timeline
+  useEffect(() => {
+    if (buddy.buddyMessage) {
+      setTranscripts((prev) => [
+        ...prev,
+        {
+          id: ++idRef.current,
+          text: buddy.buddyMessage!,
+          timestamp: new Date(),
+          lang,
+          isBuddy: true,
+        },
+      ]);
+      mainRef.current?.scrollTo(0, 0);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buddy.buddyMessage]);
 
   const startRecording = useCallback(() => {
     setError(null);
@@ -104,6 +126,8 @@ export default function Home() {
   const clearTranscripts = useCallback(() => {
     setTranscripts([]);
     setInterim("");
+    buddy.reset();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Space hold to record, release to stop
@@ -152,25 +176,32 @@ export default function Home() {
           <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
             {isJa ? "音声文字起こし" : "Voice Transcription"}
           </h1>
-          <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
-            {(Object.entries(LANG_CONFIG) as [Lang, { label: string; flag: string }][]).map(
-              ([key, config]) => (
-                <button
-                  key={key}
-                  onClick={() => {
-                    if (isRecording) stopRecording();
-                    setLang(key);
-                  }}
-                  className={`px-3 py-1.5 text-sm font-medium transition-colors ${
-                    lang === key
-                      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                      : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                  }`}
-                >
-                  {config.flag} {config.label}
-                </button>
-              )
-            )}
+          <div className="flex items-center gap-3">
+            <div className="flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+              {(Object.entries(LANG_CONFIG) as [Lang, { label: string; flag: string }][]).map(
+                ([key, config]) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      if (isRecording) stopRecording();
+                      setLang(key);
+                    }}
+                    className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                      lang === key
+                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                        : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+                    }`}
+                  >
+                    {config.flag} {config.label}
+                  </button>
+                )
+              )}
+            </div>
+            <Buddy
+              buddyMessage={buddy.buddyMessage}
+              isThinking={buddy.isThinking}
+              dismissMessage={buddy.dismissMessage}
+            />
           </div>
         </div>
         <div className="flex items-center justify-center gap-4 max-w-2xl mx-auto mt-3">
@@ -260,16 +291,31 @@ export default function Home() {
           {[...transcripts].reverse().map((entry) => (
             <div
               key={entry.id}
-              className="bg-white dark:bg-zinc-900 rounded-lg px-4 py-3 shadow-sm border border-zinc-200 dark:border-zinc-800"
+              className={`rounded-lg px-4 py-3 shadow-sm border ${
+                entry.isBuddy
+                  ? "bg-pink-50 dark:bg-pink-950/30 border-pink-200 dark:border-pink-800"
+                  : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+              }`}
             >
-              <p className="text-zinc-900 dark:text-zinc-100">{entry.text}</p>
+              <p className={entry.isBuddy ? "text-pink-700 dark:text-pink-300" : "text-zinc-900 dark:text-zinc-100"}>
+                {entry.isBuddy && (
+                  <span className="mr-1.5" style={{ fontFamily: "'Courier New', Courier, monospace" }}>
+                    (・ω・)
+                  </span>
+                )}
+                {entry.text}
+              </p>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-zinc-400 dark:text-zinc-600">
                   {formatTime(entry.timestamp)}
                 </span>
-                <span className="text-xs text-zinc-300 dark:text-zinc-700">
-                  {LANG_CONFIG[entry.lang].flag}
-                </span>
+                {entry.isBuddy ? (
+                  <span className="text-xs text-pink-300 dark:text-pink-700">BUDDY</span>
+                ) : (
+                  <span className="text-xs text-zinc-300 dark:text-zinc-700">
+                    {LANG_CONFIG[entry.lang].flag}
+                  </span>
+                )}
               </div>
             </div>
           ))}
