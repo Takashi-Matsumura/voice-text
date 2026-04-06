@@ -1,0 +1,55 @@
+{
+  "entries": [
+    {
+      "id": "1",
+      "patterns": [
+        "ジェムスリー",
+        "ジェマスリー"
+      ],
+      "replacement": "Gemma 3",
+      "enabled": true
+    },
+    {
+      "id": "2",
+      "patterns": [
+        "ジェマフォー",
+        "ジェムフォー"
+      ],
+      "replacement": "Gemma 4",
+      "enabled": true
+    },
+    {
+      "id": "3",
+      "patterns": [
+        "ジェマ",
+        "じぇま"
+      ],
+      "replacement": "Gemma",
+      "enabled": true
+    },
+    {
+      "id": "4",
+      "patterns": [
+        "ラマ"
+      ],
+      "replacement": "Llama",
+      "enabled": true
+    },
+    {
+      "id": "cb42a6ad-8d6a-4de9-8c17-876087d4dc1b",
+      "patterns": [
+        "松村 瑛太"
+      ],
+      "replacement": "松村 栄汰",
+      "enabled": true
+    },
+    {
+      "id": "b08f1ef6-fd45-47e2-9697-285b8fb9f6f5",
+      "patterns": [
+        "松村さおり"
+      ],
+      "replacement": "松村 沙保里",
+      "enabled": true
+    }
+  ]
+}

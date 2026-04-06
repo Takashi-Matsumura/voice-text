@@ -2,14 +2,19 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useBuddy } from "./hooks/useBuddy";
+import { useDictionary } from "./hooks/useDictionary";
+import { applyDictionary, type TextSegment } from "./lib/applyDictionary";
 import Buddy from "./components/Buddy";
 import DebugPanel from "./components/DebugPanel";
+import DictionaryPanel from "./components/DictionaryPanel";
 
 type Lang = "ja-JP" | "en-US";
 
 type TranscriptEntry = {
   id: number;
   text: string;
+  rawText?: string; // original text before dictionary replacement
+  segments?: TextSegment[]; // segments with replacement info
   timestamp: Date;
   lang: Lang;
   isBuddy?: boolean;
@@ -27,10 +32,19 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>("ja-JP");
   const [debugMode, setDebugMode] = useState(false);
+  const [showDictionary, setShowDictionary] = useState(false);
+  const [dictPopup, setDictPopup] = useState<{
+    selectedText: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [dictFormText, setDictFormText] = useState("");
+  const [dictFormReplacement, setDictFormReplacement] = useState("");
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const isRecordingRef = useRef(false);
   const idRef = useRef(0);
   const mainRef = useRef<HTMLDivElement>(null);
+  const dictionary = useDictionary();
   const buddy = useBuddy(transcripts, lang, { debugMode });
 
   // Add buddy messages to the transcript timeline
@@ -75,12 +89,20 @@ export default function Home() {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          const text = result[0].transcript.trim();
+          const rawText = result[0].transcript.trim();
+          const { text, segments } = applyDictionary(rawText, dictionary.entriesRef.current);
           if (text) {
             const currentLang = recognition.lang as Lang;
+            const hasDictChanges = segments.some((s) => s.original);
             setTranscripts((prev) => [
               ...prev,
-              { id: ++idRef.current, text, timestamp: new Date(), lang: currentLang },
+              {
+                id: ++idRef.current,
+                text,
+                ...(hasDictChanges ? { rawText, segments } : {}),
+                timestamp: new Date(),
+                lang: currentLang,
+              },
             ]);
             mainRef.current?.scrollTo(0, 0);
           }
@@ -132,6 +154,19 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Close dict popup on outside click
+  useEffect(() => {
+    if (!dictPopup) return;
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest("[data-dict-popup]")) {
+        setDictPopup(null);
+      }
+    };
+    window.addEventListener("mousedown", handleClick);
+    return () => window.removeEventListener("mousedown", handleClick);
+  }, [dictPopup]);
+
   // Space hold to record, release to stop
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -161,6 +196,51 @@ export default function Home() {
       window.removeEventListener("keyup", handleKeyUp);
     };
   }, [startRecording, stopRecording]);
+
+  // Text selection → dictionary registration
+  const handleTextSelect = useCallback(() => {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim();
+    if (!text) return;
+
+    const range = selection?.getRangeAt(0);
+    if (!range) return;
+
+    const rect = range.getBoundingClientRect();
+    setDictPopup({
+      selectedText: text,
+      x: rect.left + rect.width / 2,
+      y: rect.top - 8,
+    });
+    setDictFormText(text);
+    setDictFormReplacement("");
+  }, []);
+
+  const handleDictRegister = useCallback(() => {
+    const patterns = dictFormText
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (patterns.length === 0 || !dictFormReplacement.trim()) return;
+    dictionary.addEntry(patterns, dictFormReplacement.trim());
+    setDictPopup(null);
+    window.getSelection()?.removeAllRanges();
+  }, [dictFormText, dictFormReplacement, dictionary]);
+
+  const closeDictPopup = useCallback(() => {
+    setDictPopup(null);
+  }, []);
+
+  // Revert a transcript entry to its original (pre-dictionary) text
+  const revertDictEntry = useCallback((entryId: number) => {
+    setTranscripts((prev) =>
+      prev.map((t) =>
+        t.id === entryId && t.rawText
+          ? { ...t, text: t.rawText, rawText: undefined, segments: undefined }
+          : t
+      )
+    );
+  }, []);
 
   const formatTime = (date: Date) =>
     date.toLocaleTimeString("ja-JP", {
@@ -209,6 +289,17 @@ export default function Home() {
               title={isJa ? "デバッグ表示を切り替え" : "Toggle debug panel"}
             >
               DEBUG
+            </button>
+            <button
+              onClick={() => setShowDictionary((v) => !v)}
+              className={`rounded-md border px-2.5 py-1.5 text-xs font-mono font-medium transition-colors ${
+                showDictionary
+                  ? "bg-blue-400 border-blue-500 text-white"
+                  : "bg-transparent border-zinc-300 dark:border-zinc-700 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+              }`}
+              title={isJa ? "辞書パネルを切り替え" : "Toggle dictionary panel"}
+            >
+              DICT
             </button>
             <Buddy
               buddyMessage={buddy.buddyMessage}
@@ -304,10 +395,11 @@ export default function Home() {
           {[...transcripts].reverse().map((entry) => (
             <div
               key={entry.id}
+              onMouseUp={entry.isBuddy ? undefined : handleTextSelect}
               className={`rounded-lg px-4 py-3 shadow-sm border ${
                 entry.isBuddy
                   ? "bg-pink-50 dark:bg-pink-950/30 border-pink-200 dark:border-pink-800"
-                  : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"
+                  : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 select-text"
               }`}
             >
               <p className={entry.isBuddy ? "text-pink-700 dark:text-pink-300" : "text-zinc-900 dark:text-zinc-100"}>
@@ -316,7 +408,23 @@ export default function Home() {
                     (・ω・)
                   </span>
                 )}
-                {entry.text}
+                {entry.segments ? (
+                  entry.segments.map((seg, i) =>
+                    seg.original ? (
+                      <span
+                        key={i}
+                        className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded px-0.5 border-b border-blue-300 dark:border-blue-700 cursor-help"
+                        title={`${isJa ? "元のテキスト" : "Original"}: ${seg.original}`}
+                      >
+                        {seg.text}
+                      </span>
+                    ) : (
+                      <span key={i}>{seg.text}</span>
+                    )
+                  )
+                ) : (
+                  entry.text
+                )}
               </p>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-zinc-400 dark:text-zinc-600">
@@ -329,6 +437,15 @@ export default function Home() {
                     {LANG_CONFIG[entry.lang].flag}
                   </span>
                 )}
+                {entry.rawText && (
+                  <button
+                    onClick={() => revertDictEntry(entry.id)}
+                    className="text-xs text-blue-400 hover:text-blue-600 dark:text-blue-500 dark:hover:text-blue-300"
+                    title={isJa ? "辞書置換を元に戻す" : "Revert dictionary replacement"}
+                  >
+                    {isJa ? "元に戻す" : "revert"}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -340,6 +457,71 @@ export default function Home() {
           lastDebug={buddy.lastDebug}
           callCount={buddy.callCount}
           onClose={() => setDebugMode(false)}
+        />
+      )}
+
+      {/* Dictionary registration popup from text selection */}
+      {dictPopup && (
+        <div
+          className="fixed z-30"
+          style={{
+            left: dictPopup.x,
+            top: dictPopup.y,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          <div data-dict-popup className="bg-white dark:bg-zinc-800 rounded-lg shadow-2xl border border-zinc-200 dark:border-zinc-700 p-3 w-64">
+            <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">
+              {isJa ? "辞書に登録" : "Add to dictionary"}
+            </div>
+            <div className="space-y-1.5">
+              <input
+                type="text"
+                value={dictFormText}
+                onChange={(e) => setDictFormText(e.target.value)}
+                placeholder={isJa ? "パターン（カンマ区切り）" : "Patterns (comma separated)"}
+                className="w-full px-2 py-1.5 rounded border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-900 text-xs"
+                autoFocus
+              />
+              <input
+                type="text"
+                value={dictFormReplacement}
+                onChange={(e) => setDictFormReplacement(e.target.value)}
+                placeholder={isJa ? "正しい表記" : "Correct text"}
+                className="w-full px-2 py-1.5 rounded border border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-900 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) handleDictRegister();
+                  if (e.key === "Escape") closeDictPopup();
+                }}
+              />
+              <div className="flex gap-1.5">
+                <button
+                  onClick={handleDictRegister}
+                  className="flex-1 py-1.5 rounded bg-blue-500 text-white text-xs font-medium hover:bg-blue-600 transition-colors"
+                >
+                  {isJa ? "登録" : "Add"}
+                </button>
+                <button
+                  onClick={closeDictPopup}
+                  className="px-3 py-1.5 rounded border border-zinc-300 dark:border-zinc-600 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+                >
+                  {isJa ? "閉じる" : "Cancel"}
+                </button>
+              </div>
+            </div>
+            {/* Arrow */}
+            <div className="absolute left-1/2 -bottom-1.5 -translate-x-1/2 w-3 h-3 rotate-45 bg-white dark:bg-zinc-800 border-r border-b border-zinc-200 dark:border-zinc-700" />
+          </div>
+        </div>
+      )}
+
+      {showDictionary && (
+        <DictionaryPanel
+          entries={dictionary.entries}
+          onAdd={dictionary.addEntry}
+          onRemove={dictionary.removeEntry}
+          onToggle={dictionary.toggleEntry}
+          onClose={() => setShowDictionary(false)}
         />
       )}
     </div>

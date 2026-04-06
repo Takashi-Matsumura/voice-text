@@ -75,16 +75,14 @@ export default function Buddy({ buddyMessage, isThinking, dismissMessage }: Budd
 
   return (
     <div className="relative flex items-center">
-      {/* Speech bubble */}
-      {visible && buddyMessage && (
+      {/* Speech bubble - only show "・・・" while thinking */}
+      {isThinking && (
         <div
-          onClick={handleBubbleClick}
-          className={`absolute right-full mr-2 max-w-[220px] rounded-xl px-3 py-2 text-sm cursor-pointer
+          className="absolute right-full mr-2 max-w-[220px] rounded-xl px-3 py-2 text-sm cursor-default
             bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800
-            text-zinc-800 dark:text-zinc-200 shadow-md
-            ${fading ? "bubble-fade" : "bubble-pop"}`}
+            text-zinc-800 dark:text-zinc-200 shadow-md bubble-pop"
         >
-          {buddyMessage}
+          ・・・
           {/* Bubble tail */}
           <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 rotate-45
             bg-amber-50 dark:bg-amber-900/20 border-r border-t border-amber-200 dark:border-amber-800" />
