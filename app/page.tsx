@@ -29,6 +29,7 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
   const [interim, setInterim] = useState("");
+  const [bufferPreview, setBufferPreview] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>("ja-JP");
   const [debugMode, setDebugMode] = useState(false);
@@ -43,6 +44,7 @@ export default function Home() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const isRecordingRef = useRef(false);
   const idRef = useRef(0);
+  const finalBufferRef = useRef<string[]>([]);
   const mainRef = useRef<HTMLDivElement>(null);
   const dictionary = useDictionary();
   const buddy = useBuddy(transcripts, lang, { debugMode });
@@ -65,8 +67,35 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buddy.buddyMessage]);
 
+  // Flush buffered final results as a single transcript entry
+  const flushBuffer = useCallback(() => {
+    const buffered = finalBufferRef.current;
+    finalBufferRef.current = [];
+    setBufferPreview("");
+    if (buffered.length > 0) {
+      const rawText = buffered.join(" ");
+      const { text, segments } = applyDictionary(rawText, dictionary.entriesRef.current);
+      if (text) {
+        const hasDictChanges = segments.some((s) => s.original);
+        setTranscripts((prev) => [
+          ...prev,
+          {
+            id: ++idRef.current,
+            text,
+            ...(hasDictChanges ? { rawText, segments } : {}),
+            timestamp: new Date(),
+            lang,
+          },
+        ]);
+        mainRef.current?.scrollTo(0, 0);
+      }
+    }
+  }, [lang]);
+
   const startRecording = useCallback(() => {
     setError(null);
+    finalBufferRef.current = [];
+    setBufferPreview("");
 
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -89,22 +118,10 @@ export default function Home() {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          const rawText = result[0].transcript.trim();
-          const { text, segments } = applyDictionary(rawText, dictionary.entriesRef.current);
+          const text = result[0].transcript.trim();
           if (text) {
-            const currentLang = recognition.lang as Lang;
-            const hasDictChanges = segments.some((s) => s.original);
-            setTranscripts((prev) => [
-              ...prev,
-              {
-                id: ++idRef.current,
-                text,
-                ...(hasDictChanges ? { rawText, segments } : {}),
-                timestamp: new Date(),
-                lang: currentLang,
-              },
-            ]);
-            mainRef.current?.scrollTo(0, 0);
+            finalBufferRef.current.push(text);
+            setBufferPreview(finalBufferRef.current.join(" "));
           }
           setInterim("");
         } else {
@@ -132,19 +149,18 @@ export default function Home() {
       setIsRecording(false);
       isRecordingRef.current = false;
       setInterim("");
+      flushBuffer();
     };
 
     recognition.start();
     recognitionRef.current = recognition;
     setIsRecording(true);
     isRecordingRef.current = true;
-  }, [lang]);
+  }, [lang, flushBuffer]);
 
   const stopRecording = useCallback(() => {
     recognitionRef.current?.stop();
     recognitionRef.current = null;
-    setIsRecording(false);
-    isRecordingRef.current = false;
   }, []);
 
   const clearTranscripts = useCallback(() => {
@@ -384,10 +400,10 @@ export default function Home() {
         )}
 
         <div className="space-y-3 max-w-2xl mx-auto">
-          {interim && (
+          {(bufferPreview || interim) && (
             <div className="bg-zinc-100 dark:bg-zinc-800 rounded-lg px-4 py-3 border border-dashed border-zinc-300 dark:border-zinc-700">
               <p className="text-zinc-500 dark:text-zinc-400 italic">
-                {interim}
+                {[bufferPreview, interim].filter(Boolean).join(" ")}
               </p>
             </div>
           )}
